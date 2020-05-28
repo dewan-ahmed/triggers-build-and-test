@@ -1,0 +1,22 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: run-script
+spec:
+  resources:
+    inputs:
+      - {type: git, name: source}
+      - {type: image, name: image}
+  params:
+    - name: script_to_run
+      description: Application name prefix for the CF app
+      type: string
+      default: "./scripts/build_jekyll_maven.sh"
+  steps:
+    - name: publish
+      image: $(inputs.resources.image.url)
+      workingDir: /
+      script: |
+        $(inputs.params.script_to_run)
+      securityContext:
+        runAsUser: 0

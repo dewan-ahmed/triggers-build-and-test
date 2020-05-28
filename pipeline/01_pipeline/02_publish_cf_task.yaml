@@ -1,0 +1,69 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: publish-cf
+spec:
+  resources:
+    inputs:
+      - {type: git, name: source}
+      - {type: image, name: image}
+  params:
+    - name: ibm_cloud_organization
+      description: Organization in IBM Cloud account
+      type: string
+    - name: ibm_cloud_space
+      description: Space inside organization in IBM Cloud account
+      type: string
+      default: "dev"
+    - name: ibm_cloud_api
+      description: URL for IBM Cloud account
+      type: string
+      default: "https://cloud.ibm.com"
+    - name: ibm_cloud_api_key_secret
+      description: API key for IBM Cloud account
+      type: string
+      default: ibmcloud-api-key-kabanero-website 
+    - name: docs_git_url
+      description: Source URL for docs inside website
+      type: string
+      default: "https://github.com/kabanero-io/docs.git"
+    - name: guides_git_url
+      description: Source URL for guides inside website
+      type: string
+      default: "https://github.com/kabanero-io/guides.git"
+    - name: github_token_secret
+      type: string
+      description: name of the secret holding the Git Personal Access Token
+      default: git-pat-kabanero-website
+    - name: app_name_prefix
+      description: Application name prefix for the CF app
+      type: string
+  steps:
+    - name: publish
+      env:
+      - name: PAT
+        valueFrom:
+          secretKeyRef:
+            name: $(params.github_token_secret)
+            key: github_pat
+      - name: IBM_CLOUD_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: $(params.ibm_cloud_api_key_secret)
+            key: ibmcloud_api_key
+      image: $(inputs.resources.image.url)
+      workingDir: /workspace/source
+      script: |
+        #!/usr/bin/env bash
+        cd /
+        export IBM_CLOUD_ORGANIZATION=$(inputs.params.ibm_cloud_organization)
+        export IBM_CLOUD_SPACE=$(inputs.params.ibm_cloud_space)
+        # export IBM_CLOUD_API_KEY=$(inputs.params.ibm_cloud_api_key)
+        export IBM_CLOUD_API=$(inputs.params.ibm_cloud_api)
+        export DOCS_GIT_URL=$(inputs.params.docs_git_url)
+        export GUIDES_GIT_URL=$(inputs.params.guides_git_url)
+        export JEKYLL_DRAFT_GUIDES=true
+        export TRAVIS_REPO_SLUG=$(inputs.params.app_name_prefix)
+        ./travis/travis_ibmcloud_cf_push.sh
+      securityContext:
+        runAsUser: 0

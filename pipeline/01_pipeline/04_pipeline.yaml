@@ -1,0 +1,123 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: build-and-deploy-kabanero-website-using-triggers
+spec:
+  resources:
+  - name: git-repo
+    type: git
+  - name: target-image
+    type: image
+  params:
+  - name: ibm_cloud_organization
+    description: Organization in IBM Cloud account
+    type: string
+  - name: ibm_cloud_space
+    description: Space inside organization in IBM Cloud account
+    type: string
+    default: "dev"
+  - name: ibm_cloud_api
+    description: URL for IBM Cloud account
+    type: string
+    default: "https://cloud.ibm.com"
+  - name: ibm_cloud_api_key_secret
+    description: K8s secret name for API key for IBM Cloud account
+    type: string
+    default: ibmcloud-api-key-kabanero-website
+  - name: docs_git_url
+    description: Source URL for docs inside website
+    type: string
+    default: "https://github.com/kabanero-io/docs.git"
+  - name: guides_git_url
+    description: Source URL for guides inside website
+    type: string
+    default: "https://github.com/kabanero-io/guides.git"
+  - name: github_token_secret
+    description: K8s secret name for Git Personal Access Token
+    type: string
+    default: git-pat-kabanero-website
+  - name: app_name_prefix
+    description: Application name prefix for the CF app
+    type: string
+  tasks:
+  - name: build-image
+    taskRef:
+      name: buildah
+      kind: ClusterTask
+    resources:
+      inputs:
+      - name: source
+        resource: git-repo
+      outputs:
+      - name: image
+        resource: target-image
+    params:
+    - name: TLSVERIFY
+      value: "false"
+    - name: DOCKERFILE
+      value: "./travis/Dockerfile"
+    - name: FORMAT
+      value: "docker"
+  - name: test-lint
+    taskRef:
+      name: run-script
+    resources:
+      inputs:
+      - name: source
+        resource: git-repo
+      - name: image
+        resource: target-image
+        from:
+          - build-image
+    params:
+    - name: script_to_run
+      value: "./node_modules/.bin/eslint src/main/content/_assets/js/*.js"
+    runAfter:
+    - build-image
+  - name: test-maven
+    taskRef:
+      name: run-script
+    resources:
+      inputs:
+      - name: source
+        resource: git-repo
+      - name: image
+        resource: target-image
+        from:
+          - build-image
+    params:
+    - name: script_to_run
+      value: "./scripts/build_jekyll_maven.sh"
+    runAfter:
+    - build-image
+  - name: publish-cf
+    taskRef:
+      name: publish-cf
+    resources:
+      inputs:
+      - name: source
+        resource: git-repo
+      - name: image
+        resource: target-image
+        from:
+          - build-image
+    params:
+    - name: ibm_cloud_organization
+      value: $(params.ibm_cloud_organization)
+    - name: ibm_cloud_space
+      value: $(params.ibm_cloud_space)
+    - name: ibm_cloud_api
+      value: $(params.ibm_cloud_api)
+    - name: ibm_cloud_api_key_secret
+      value: $(params.ibm_cloud_api_key_secret)
+    - name: docs_git_url
+      value: $(params.docs_git_url)
+    - name: guides_git_url
+      value: $(params.guides_git_url)
+    - name: github_token_secret
+      value: $(params.github_token_secret)
+    - name: app_name_prefix
+      value: $(params.app_name_prefix)
+    runAfter:
+    - test-maven
+    - test-lint

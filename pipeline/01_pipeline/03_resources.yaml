@@ -1,0 +1,20 @@
+---
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: kabanero-website-repo
+spec:
+  type: git
+  params:
+  - name: url
+    value: http://github.com/kabanero-io/kabanero-website.git
+---
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: kabanero-website-image
+spec:
+  type: image
+  params:
+  - name: url
+    value: image-registry.openshift-image-registry.svc:5000/kabanero-website-triggers/website-travis:latest

@@ -1,0 +1,121 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: build-and-deploy-kabanero-website-pipelinerun-triggertemplate
+spec:
+  params:
+  - name: SERVICE_ACCOUNT
+    description: The ServiceAccount under which to run the Pipeline.
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      generateName: build-and-deploy-kabanero-website-pipelinerun-triggers-
+    spec:
+      serviceAccountName: $(params.SERVICE_ACCOUNT)
+      pipelineRef:
+        name: build-and-deploy-kabanero-website-using-triggers
+      resources:
+        -
+            name: git-repo
+            resourceRef: {name: kabanero-website-repo}
+        -
+            name: target-image
+            resourceRef: {name: kabanero-website-image}
+      params:
+        -   name: app_name_prefix
+            value: production
+        -
+            name: ibm_cloud_organization
+            value: dewan.ishtiaque@hotmail.com
+        -
+            name: ibm_cloud_space
+            value: dev
+        -
+            name: ibm_cloud_api
+            value: 'https://cloud.ibm.com'
+        -
+            name: ibm_cloud_api_key_secret
+            value: ibmcloud-api-key-kabanero-website
+        -
+            name: docs_git_url
+            value: 'https://github.com/kabanero-io/docs.git'
+        -
+            name: guides_git_url
+            value: 'https://github.com/nastacio/guides.git'
+        -
+            name: github_token_secret
+            value: git-pat-kabanero-website
+
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: kabanero-triggerbinding
+spec:
+  params:
+  - name: NAMESPACE
+    value: kabanero-website-triggers
+  - name: SERVICE_ACCOUNT
+    value: kabanero-sa
+---
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kabanero-sa
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kabanero-role
+rules:
+# Permissions for every EventListener deployment to function
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners", "triggerbindings", "triggertemplates"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Permissions to create resources in associated TriggerTemplates
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kabanero-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: kabanero-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kabanero-role
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: kabanero
+spec:
+  serviceAccountName: kabanero-sa
+  triggers:
+  - name: kabanero-push
+    template:
+      name: kabanero-triggertemplate
+    bindings:
+    - name: kabanero-triggerbinding
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    eventlistener: kabanero
+  name: el-kabanero
+spec:
+  port:
+    targetPort: http-listener
+  to:
+    kind: Service
+    name: el-kabanero

@@ -1,0 +1,90 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: kabanero-triggertemplate
+spec:
+  params:
+  - name: SERVICE_ACCOUNT
+    description: The ServiceAccount under which to run the Pipeline.
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      generateName: kabanero-pipelinerun-
+    spec:
+      serviceAccountName: $(params.SERVICE_ACCOUNT)
+      pipelineRef:
+        name: apply-new-pipeline
+      resources:
+      params:
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: kabanero-triggerbinding
+spec:
+  params:
+  - name: NAMESPACE
+    value: kabanero-triggers
+  - name: SERVICE_ACCOUNT
+    value: kabanero-sa
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kabanero-sa
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kabanero-role
+rules:
+# Permissions for every EventListener deployment to function
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners", "triggerbindings", "triggertemplates"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Permissions to create resources in associated TriggerTemplates
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kabanero-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: kabanero-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kabanero-role
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: kabanero
+spec:
+  serviceAccountName: kabanero-sa
+  triggers:
+  - name: kabanero-push
+    template:
+      name: kabanero-triggertemplate
+    bindings:
+    - name: kabanero-triggerbinding
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    eventlistener: kabanero
+  name: el-kabanero
+spec:
+  port:
+    targetPort: http-listener
+  to:
+    kind: Service
+    name: el-kabanero
